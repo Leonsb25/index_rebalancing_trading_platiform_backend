@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+.Trash/
+
+# Home folder (ignore ALL parent dirs)
+../../*
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.env
+db.sqlite3
+
+# Node
+node_modules/
+npm-debug.log
+
+# IDE
+.vscode/
+.idea/
