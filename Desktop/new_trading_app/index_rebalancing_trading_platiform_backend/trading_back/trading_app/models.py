@@ -208,3 +208,91 @@ class Holding(models.Model):
     
     def __str__(self):
         return f"{self.user.name} - {self.stock} ({self.quantity} shares)"
+
+
+class AutoTradingBot(models.Model):
+    """
+    Automated Trading Bot Configuration
+    """
+    RISK_CHOICES = [
+        ('LOW', 'Low Risk - Conservative'),
+        ('MEDIUM', 'Medium Risk - Balanced'),
+        ('HIGH', 'High Risk - Aggressive'),
+    ]
+    
+    DURATION_CHOICES = [
+        ('SHORT', 'Short Term - 1-7 days'),
+        ('MEDIUM', 'Medium Term - 1-4 weeks'),
+        ('LONG', 'Long Term - 1-3 months'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('ACTIVE', 'Active'),
+        ('PAUSED', 'Paused'),
+        ('STOPPED', 'Stopped'),
+    ]
+    
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='trading_bots')
+    name = models.CharField(max_length=100, default='My Trading Bot')
+    risk_level = models.CharField(max_length=10, choices=RISK_CHOICES, default='MEDIUM')
+    duration = models.CharField(max_length=10, choices=DURATION_CHOICES, default='MEDIUM')
+    initial_capital = models.DecimalField(max_digits=15, decimal_places=2)
+    current_capital = models.DecimalField(max_digits=15, decimal_places=2)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='ACTIVE')
+    
+    # Strategy weights (0-100)
+    use_pivot = models.BooleanField(default=True)
+    use_prediction = models.BooleanField(default=True)
+    use_screener = models.BooleanField(default=True)
+    use_index_rebalancing = models.BooleanField(default=True)
+    
+    # Performance tracking
+    total_trades = models.IntegerField(default=0)
+    winning_trades = models.IntegerField(default=0)
+    losing_trades = models.IntegerField(default=0)
+    total_profit_loss = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    expected_return = models.DecimalField(max_digits=5, decimal_places=2, default=0)  # percentage
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_trade_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        db_table = 'auto_trading_bots'
+    
+    def __str__(self):
+        return f"{self.name} - {self.risk_level} ({self.status})"
+    
+    @property
+    def win_rate(self):
+        if self.total_trades == 0:
+            return 0
+        return (self.winning_trades / self.total_trades) * 100
+    
+    @property
+    def roi_percentage(self):
+        if self.initial_capital == 0:
+            return 0
+        return ((self.current_capital - self.initial_capital) / self.initial_capital) * 100
+
+
+class BotTrade(models.Model):
+    """
+    Individual trades executed by the bot
+    """
+    bot = models.ForeignKey(AutoTradingBot, on_delete=models.CASCADE, related_name='trades')
+    stock = models.CharField(max_length=10)
+    action = models.CharField(max_length=10)  # BUY or SELL
+    quantity = models.IntegerField()
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    total_value = models.DecimalField(max_digits=15, decimal_places=2)
+    strategy_used = models.CharField(max_length=50)
+    confidence_score = models.DecimalField(max_digits=5, decimal_places=2, null=True)
+    profit_loss = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    executed_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'bot_trades'
+        ordering = ['-executed_at']
+    
+    def __str__(self):
+        return f"{self.action} {self.quantity} {self.stock} @ ${self.price}"

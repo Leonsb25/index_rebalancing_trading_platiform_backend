@@ -1,126 +1,211 @@
 """
-ML Model API Views
+ML Strategy Views with LIVE Data Integration
 """
-
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
-
+import yfinance as yf
 from .ml_models.pivot import PivotStrategy
 from .ml_models.nextday_prediction import NextDayPredictor
 from .ml_models.stock_screener import StockScreener
 from .ml_models.index_rebalancing import IndexRebalancingStrategy
 
-# Initialize ML models
-pivot_strategy = PivotStrategy()
-predictor = NextDayPredictor()
-screener = StockScreener()
-index_strategy = IndexRebalancingStrategy()
-
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def pivot_analysis(request):
     """
     Pivot Point Analysis
-    POST /api/ml/pivot/
-    Body: {"high": 150.0, "low": 145.0, "close": 148.0}
+    If only 'ticker' provided: fetch LIVE data from Yahoo Finance
+    Otherwise: use provided high/low/close values
     """
     try:
-        high = float(request.data.get('high'))
-        low = float(request.data.get('low'))
-        close = float(request.data.get('close'))
+        data = request.data
+        ticker = data.get('ticker')
         
-        result = pivot_strategy.predict(high, low, close)
-        return Response(result, status=status.HTTP_200_OK)
-    
-    except (TypeError, ValueError) as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        strategy = PivotStrategy()
+        
+        # If ticker provided and no manual data, fetch live
+        if ticker and not all([data.get('high'), data.get('low'), data.get('close')]):
+            result = strategy.predict(ticker=ticker)
+        else:
+            # Use manual data
+            high = float(data.get('high', 0))
+            low = float(data.get('low', 0))
+            close = float(data.get('close', 0))
+            
+            if not all([high, low, close]):
+                return Response({
+                    'error': 'Please provide either ticker OR (high, low, close) values'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            result = strategy.predict(high=high, low=low, close=close)
+        
+        if 'error' in result:
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response(result)
+        
+    except Exception as e:
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def next_day_prediction(request):
     """
     Next-Day Price Prediction
-    POST /api/ml/predict/
-    Body: {
-        "stock_symbol": "AAPL",
-        "open_price": 145.0,
-        "high": 150.0,
-        "low": 144.0,
-        "close": 148.0,
-        "volume": 1000000
-    }
+    If only 'stock_symbol' provided: fetch LIVE data
+    Otherwise: use provided OHLCV data
     """
     try:
-        stock_symbol = request.data.get('stock_symbol')
-        open_price = float(request.data.get('open_price'))
-        high = float(request.data.get('high'))
-        low = float(request.data.get('low'))
-        close = float(request.data.get('close'))
-        volume = int(request.data.get('volume'))
+        data = request.data
+        ticker = data.get('stock_symbol') or data.get('ticker')
         
-        result = predictor.predict(stock_symbol, open_price, high, low, close, volume)
-        return Response(result, status=status.HTTP_200_OK)
-    
-    except (TypeError, ValueError) as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        predictor = NextDayPredictor()
+        
+        # If ticker provided and no manual data, fetch live
+        if ticker and not data.get('open_price'):
+            result = predictor.predict(ticker=ticker)
+        else:
+            # Use manual data
+            open_price = float(data.get('open_price', 0))
+            high = float(data.get('high', 0))
+            low = float(data.get('low', 0))
+            close = float(data.get('close', 0))
+            volume = int(data.get('volume', 0))
+            
+            if not all([open_price, high, low, close, volume]):
+                return Response({
+                    'error': 'Please provide either ticker OR all OHLCV values'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            result = predictor.predict(
+                ticker=ticker,
+                open_price=open_price,
+                high=high,
+                low=low,
+                close=close,
+                volume=volume
+            )
+        
+        if 'error' in result:
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response(result)
+        
+    except Exception as e:
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
-def stock_screener_analysis(request):
+@permission_classes([IsAuthenticated])
+def stock_screener(request):
     """
     Stock Screener for Index Addition
-    POST /api/ml/screener/
-    Body: {
-        "market_cap": 15000000000,
-        "volume": 1200000,
-        "sector": "Technology"
-    }
+    If only 'ticker' provided: fetch LIVE market cap, volume, sector
+    Otherwise: use provided values
     """
     try:
-        market_cap = float(request.data.get('market_cap'))
-        volume = int(request.data.get('volume'))
-        sector = request.data.get('sector', 'Technology')
+        data = request.data
+        ticker = data.get('ticker')
         
-        result = screener.screen_for_index_addition(market_cap, volume, sector)
-        return Response(result, status=status.HTTP_200_OK)
-    
-    except (TypeError, ValueError) as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        screener = StockScreener()
+        
+        # If ticker provided and no manual data, fetch live
+        if ticker and not data.get('market_cap'):
+            result = screener.screen_for_index_addition(ticker=ticker)
+        else:
+            # Use manual data
+            market_cap = float(data.get('market_cap', 0))
+            volume = int(data.get('volume', 0))
+            sector = data.get('sector', 'Technology')
+            
+            if not all([market_cap, volume]):
+                return Response({
+                    'error': 'Please provide either ticker OR (market_cap and volume)'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            result = screener.screen_for_index_addition(
+                ticker=ticker,
+                market_cap=market_cap,
+                volume=volume,
+                sector=sector
+            )
+        
+        if 'error' in result:
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response(result)
+        
+    except Exception as e:
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def index_rebalancing_analysis(request):
     """
     Index Reconstitution Event Analysis
-    POST /api/ml/index-event/
-    Body: {
-        "stock_symbol": "AAPL",
-        "event_type": "ADD",
-        "announcement_date": "2025-10-15",
-        "effective_date": "2025-10-30",
-        "current_price": 150.0,
-        "index_name": "SP500"
-    }
+    Fetches LIVE current price if ticker provided
     """
     try:
-        stock_symbol = request.data.get('stock_symbol')
-        event_type = request.data.get('event_type')
-        announcement_date = request.data.get('announcement_date')
-        effective_date = request.data.get('effective_date')
-        current_price = float(request.data.get('current_price'))
-        index_name = request.data.get('index_name', 'SP500')
+        data = request.data
         
-        result = index_strategy.analyze_event(
-            stock_symbol, event_type, announcement_date,
-            effective_date, current_price, index_name
+        stock_symbol = data.get('stock_symbol')
+        event_type = data.get('event_type', 'ADD')
+        announcement_date = data.get('announcement_date')
+        effective_date = data.get('effective_date')
+        current_price = data.get('current_price')
+        index_name = data.get('index_name', 'SP500')
+        
+        # Validate required fields
+        if not all([stock_symbol, announcement_date, effective_date]):
+            return Response({
+                'error': 'Missing required fields: stock_symbol, announcement_date, effective_date'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Fetch live price if not provided
+        if not current_price:
+            try:
+                stock = yf.Ticker(stock_symbol)
+                hist = stock.history(period="1d")
+                if not hist.empty:
+                    current_price = float(hist['Close'].iloc[-1])
+                else:
+                    return Response({
+                        'error': f'Could not fetch current price for {stock_symbol}'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            except:
+                return Response({
+                    'error': f'Could not fetch current price for {stock_symbol}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            current_price = float(current_price)
+        
+        strategy = IndexRebalancingStrategy()
+        result = strategy.analyze_event(
+            stock_symbol=stock_symbol,
+            event_type=event_type,
+            announcement_date=announcement_date,
+            effective_date=effective_date,
+            current_price=current_price,
+            index_name=index_name
         )
-        return Response(result, status=status.HTTP_200_OK)
-    
-    except (TypeError, ValueError) as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if 'error' in result:
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response(result)
+        
+    except Exception as e:
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

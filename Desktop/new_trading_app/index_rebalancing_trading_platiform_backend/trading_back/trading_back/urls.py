@@ -21,3 +21,9 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('trading_app.urls')),
 ]
+
+from . import live_prices
+
+urlpatterns += [
+    path('api/prices/live/', live_prices.get_live_price, name='live_price'),
+]

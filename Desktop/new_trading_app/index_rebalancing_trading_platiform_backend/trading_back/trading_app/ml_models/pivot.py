@@ -1,10 +1,27 @@
 """
-Pivot Point Trading Strategy for Index Rebalancing Platform
+Pivot Point Trading Strategy - Now with LIVE data support
 """
+import yfinance as yf
 
 class PivotStrategy:
     def __init__(self):
         self.name = "Pivot Point Strategy"
+    
+    def get_live_data(self, ticker):
+        """Fetch LIVE high/low/close from Yahoo Finance"""
+        try:
+            stock = yf.Ticker(ticker)
+            hist = stock.history(period="2d")
+            if not hist.empty:
+                prev_day = hist.iloc[-2] if len(hist) > 1 else hist.iloc[-1]
+                return {
+                    'high': float(prev_day['High']),
+                    'low': float(prev_day['Low']),
+                    'close': float(prev_day['Close'])
+                }
+        except Exception as e:
+            print(f"Error fetching data for {ticker}: {e}")
+        return None
     
     def calculate_pivot_points(self, high, low, close):
         """Calculate pivot points and support/resistance levels"""
@@ -46,8 +63,27 @@ class PivotStrategy:
         else:
             return 'STRONG_SELL', f"Price ${current_price} broke below S2 (${pp['support_2']})"
     
-    def predict(self, high, low, close):
-        """Main prediction method"""
+    def predict(self, ticker=None, high=None, low=None, close=None):
+        """
+        Main prediction - can use LIVE data if only ticker provided
+        
+        Usage:
+          - LIVE: predict(ticker='AAPL')
+          - MANUAL: predict(high=150, low=148, close=149)
+        """
+        if ticker and (high is None or low is None or close is None):
+            # Fetch LIVE data
+            live_data = self.get_live_data(ticker)
+            if live_data:
+                high = live_data['high']
+                low = live_data['low']
+                close = live_data['close']
+            else:
+                return {'error': f'Could not fetch live data for {ticker}'}
+        
+        if not all([high, low, close]):
+            return {'error': 'Please provide either ticker OR (high, low, close) values'}
+        
         pivot_points = self.calculate_pivot_points(high, low, close)
         signal, description = self.generate_signal(pivot_points, close)
         
@@ -56,5 +92,6 @@ class PivotStrategy:
             'description': description,
             'current_price': round(close, 2),
             'pivot_points': pivot_points,
-            'strategy': 'Pivot Point Analysis'
+            'strategy': 'Pivot Point Analysis',
+            'data_source': 'Yahoo Finance LIVE' if ticker else 'User Input'
         }

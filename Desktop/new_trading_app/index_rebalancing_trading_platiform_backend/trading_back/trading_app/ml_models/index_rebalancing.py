@@ -1,16 +1,39 @@
 """
-Index Reconstitution Trading Strategy
+Index Reconstitution Trading Strategy - Now with LIVE data
 """
-
 from datetime import datetime, timedelta
+import yfinance as yf
 
 class IndexRebalancingStrategy:
     def __init__(self):
         self.name = "Index Reconstitution Strategy"
     
-    def analyze_event(self, stock_symbol, event_type, announcement_date, 
-                     effective_date, current_price, index_name='SP500'):
-        """Analyze index reconstitution event"""
+    def get_live_price(self, ticker):
+        """Fetch LIVE current price from Yahoo Finance"""
+        try:
+            stock = yf.Ticker(ticker)
+            hist = stock.history(period="1d")
+            if not hist.empty:
+                return float(hist['Close'].iloc[-1])
+        except Exception as e:
+            print(f"Error fetching price for {ticker}: {e}")
+        return None
+    
+    def analyze_event(self, stock_symbol, event_type, announcement_date,
+                     effective_date, current_price=None, index_name='SP500'):
+        """
+        Analyze index reconstitution event
+        If current_price not provided, fetch LIVE price
+        
+        Usage:
+          - LIVE: analyze_event('AAPL', 'ADD', '2024-12-10', '2024-12-20')
+          - MANUAL: analyze_event('AAPL', 'ADD', '2024-12-10', '2024-12-20', current_price=150.00)
+        """
+        # Fetch live price if not provided
+        if current_price is None:
+            current_price = self.get_live_price(stock_symbol)
+            if current_price is None:
+                return {'error': f'Could not fetch live price for {stock_symbol}'}
         
         today = datetime.now().date()
         effective_dt = datetime.strptime(effective_date, '%Y-%m-%d').date()
@@ -28,17 +51,17 @@ class IndexRebalancingStrategy:
                 target_price = current_price * 1.05
             elif 0 < days_to_effective <= 5:
                 action = 'HOLD' if days_to_effective > 2 else 'SELL'
-                rationale = f"{'Hold for final run-up' if days_to_effective > 2 else 'Take profits'}"
+                rationale = f"{'Hold for final run-up' if days_to_effective > 2 else 'Take profits - near effective date'}"
                 target_price = current_price * 1.02
             elif days_to_effective < 0:
                 action = 'AVOID'
-                rationale = "Index rebalancing complete. Price may revert."
+                rationale = "Index rebalancing complete. Price may revert to fundamentals."
                 target_price = None
             else:
                 action = 'BUY'
-                rationale = f"In announcement window. {days_to_effective} days until effective."
+                rationale = f"In announcement window. {days_to_effective} days until effective date."
                 target_price = current_price * 1.05
-                
+        
         elif event_type == 'DELETE':
             expected_impact = -6.0  # 6% average drop on deletions
             
@@ -48,16 +71,16 @@ class IndexRebalancingStrategy:
                 target_price = current_price * 0.94
             elif days_to_effective < 0:
                 action = 'BUY_REBOUND'
-                rationale = "Deletion complete. Oversold bounce possible."
+                rationale = "Deletion complete. Potential oversold bounce opportunity."
                 target_price = current_price * 1.05
             else:
                 action = 'SHORT' if days_to_effective > 3 else 'COVER'
-                rationale = f"{'Continue short' if days_to_effective > 3 else 'Cover shorts'}"
+                rationale = f"{'Continue short position' if days_to_effective > 3 else 'Cover shorts before effective date'}"
                 target_price = current_price * 0.94 if days_to_effective > 3 else None
         else:
-            return {'error': 'Invalid event_type'}
+            return {'error': 'Invalid event_type. Use ADD or DELETE'}
         
-        # Position size
+        # Position sizing based on time to effective
         if days_to_effective > 15:
             position_size = 3
         elif days_to_effective > 7:
@@ -75,7 +98,9 @@ class IndexRebalancingStrategy:
             'target_price': round(target_price, 2) if target_price else None,
             'expected_return_pct': expected_impact,
             'days_to_effective': days_to_effective,
+            'days_since_announcement': days_since_announcement,
             'position_size_pct': position_size,
             'risk_rating': 'MEDIUM',
-            'strategy': 'Index Reconstitution Arbitrage'
+            'strategy': 'Index Reconstitution Arbitrage',
+            'data_source': 'Yahoo Finance LIVE' if current_price else 'User Input'
         }
